@@ -286,13 +286,3 @@ Setting `LLM_PROVIDER=dummy` (or leaving API keys unset) activates the `DummyLLM
 - **Session reset:** Delete `.flask_session` cookie or restart Flask to clear in-memory `SESSION_STORE`.
 
 ---
-
-## Extending the System
-
-- **Persist sessions:** Swap `SESSION_STORE` with Redis or a database table keyed by the session UUID.
-- **Asynchronous research:** Move Group 1/2 agents into Celery or RQ workers to parallelize tasks.
-- **More channels:** Add new modules under `tools/` and register them in `group1_research.py`.
-- **Additional outputs:** Extend `AccountPlan` with custom sections or plug in CRM syncs.
-- **New UI panes:** Build more tabs (e.g., “Sources” or “Insights backlog”) by extending `templates/index.html` and `static/app.js`.
-
-This README should serve as the definitive guide for how every piece fits together—from microphone capture to Gemini transcription, from search agents to plan PDF export. Dive into the referenced modules for code-level details, swap in your own tools or models, and adapt the pipeline to your GTM workflow.
