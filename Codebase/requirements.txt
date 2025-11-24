@@ -1,0 +1,12 @@
+Flask
+langchain-core
+langchain-community
+langchain-openai
+langchain-google-genai
+duckduckgo-search
+newspaper3k
+requests
+beautifulsoup4
+feedparser
+wikipedia
+yfinance

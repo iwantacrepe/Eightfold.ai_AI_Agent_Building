@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Flask Server",
+			"type": "shell",
+			"command": "C:/Anaconda/Scripts/conda.exe",
+			"args": [
+				"run",
+				"-p",
+				"C:\\Anaconda",
+				"--no-capture-output",
+				"flask",
+				"--app",
+				"app",
+				"run"
+			],
+			"isBackground": false
+		}
+	]
+}

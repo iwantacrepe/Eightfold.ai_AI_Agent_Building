@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Account Plan Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+    <header>
+        <h1>Multi-Agent Company Research &amp; Account Plan Assistant</h1>
+        <p>Guided research, strategy, and selective regeneration.</p>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js" defer></script>
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

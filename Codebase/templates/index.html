@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="shell">
+  <div class="workspace">
+    <aside class="agent-console" id="agent-console">
+      <div class="agent-console__section">
+        <div class="agent-console__heading">
+          <h4>Research Agents</h4>
+          <p>Always-on view of each channel.</p>
+        </div>
+        <ul class="agent-console__list" id="agent-console-research">
+          <li class="agent-console__empty">Agents will activate after you approve the workplan.</li>
+        </ul>
+      </div>
+      <div class="agent-console__section" id="strategy-console">
+        <div class="agent-console__heading">
+          <h4>Strategy Agents</h4>
+          <p>Highlights once Group 2 begins synthesizing.</p>
+        </div>
+        <ul class="agent-console__list" id="agent-console-strategy">
+          <li class="agent-console__empty">Waiting for the research bundle…</li>
+        </ul>
+      </div>
+    </aside>
+    <div class="main-stack">
+      <div class="tab-controls">
+      <button type="button" class="tab-button active" data-tab="chat">Conversation</button>
+      <button type="button" class="tab-button" data-tab="research" id="research-tab">Research Feed</button>
+      <button type="button" class="tab-button disabled" data-tab="plan" id="plan-tab" disabled>Account Plan</button>
+      </div>
+      <section class="chat-area tab-panel active" id="chat-panel">
+      <div class="hero" id="hero">
+        <h2>How can I help you today?</h2>
+        <p>I can research any company, ask clarifying questions, and craft a tailored enterprise account plan.</p>
+        <ul>
+          <li>Describe the company and goal you have in mind.</li>
+          <li>I will expand the scope and share a transparent workplan.</li>
+          <li>Approve it to launch the researcher + strategist agents.</li>
+        </ul>
+      </div>
+      <div class="chat-window" id="chat-window">
+        <div class="chat-message assistant">
+          <strong>Assistant:</strong>
+          <p>Hi! Tell me which company you would like me to research and which persona mode you prefer.</p>
+        </div>
+      </div>
+        <form id="chat-form">
+          <input type="text" id="chat-input" placeholder="Type your message" autocomplete="off" required />
+          <button type="submit">Send</button>
+          <button type="button" id="mic-button" title="Voice input coming soon" disabled>🎤</button>
+        </form>
+      </section>
+      <section class="research-panel tab-panel hidden" id="research-panel">
+      <div class="research-panel__intro">
+        <h3>Research Feed</h3>
+        <p>Each agent call and source will appear here once you approve the workplan.</p>
+      </div>
+      <ul class="research-activity-list" id="research-activity-list">
+        <li class="research-activity-list__empty">No searches yet. Approve the workplan to watch the agents in action.</li>
+      </ul>
+      </section>
+      <section class="plan-panel tab-panel hidden" id="plan-panel">
+      <div class="plan-panel__header">
+        <div>
+          <h3>Account Plan</h3>
+          <p>Review the generated plan, refresh sections, or export to PDF.</p>
+        </div>
+        <div class="plan-actions">
+          <button id="refresh-plan" type="button">Refresh Plan</button>
+          <button id="download-pdf" type="button">Download PDF</button>
+        </div>
+      </div>
+      <div class="plan-panel__body" id="plan-container">
+        <p>No plan yet. Approve the workplan to generate one.</p>
+      </div>
+      <div class="sources">
+        <h4>Sources</h4>
+        <ul id="sources-list"></ul>
+      </div>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="progress-overlay hidden" id="progress-overlay">
+  <div class="progress-overlay__content">
+    <h3 id="progress-overlay-title">Researching…</h3>
+    <p class="progress-overlay__subtitle">Sit tight while the research and analysis agents work through the plan.</p>
+    <ul id="overlay-progress-list"></ul>
+  </div>
+</div>
+{% endblock %}
