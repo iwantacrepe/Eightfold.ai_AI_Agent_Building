@@ -69,6 +69,38 @@ Audio input, progress overlays, and the Research Feed run concurrently so the us
 
 ---
 
+## Example Walkthrough – Netflix Enterprise Brief
+
+The following scenario shows how the system behaves when a user asks for a GTM plan targeting Netflix.
+
+1. **Initial prompt:** User types “Need an enterprise plan for Netflix across EMEA, pitching our workforce intelligence platform to CHRO-level buyers.”
+2. **Clarification agent response:** Because company, region, persona, and product are all implicitly stated, the agent only asks one follow-up—for research depth. The user replies “Deep dive.” Clarification sets `needs_more_info=false` and hands off to the planner.
+3. **Workplan output:** Planner agent returns Markdown phases such as:
+	- **Phase 1: Discovery Alignment** (Inputs: earnings call notes, persona interviews)
+	- **Phase 2: Talent Intelligence Sweep** (Actions: map studio vs. tech headcount, Outputs: hiring velocity dossier)
+	- **Phase 3: Trigger Monitoring + 30-60-90**
+	The UI displays this plan and asks, “Does this look accurate? Reply `yes` to proceed.”
+4. **Confirmation:** User replies “yes,” advancing the state machine to `RESEARCHING`.
+5. **Search router tasks:** For Netflix, the router produces tasks like:
+	- Web: “Netflix 2025 talent strategy generative AI” via DuckDuckGo
+	- News: “site:variety.com Netflix CHRO interview”
+	- Finance: fetch latest revenue and margin deltas from Yahoo Finance
+	- Leadership: identify current CHRO/Chief Talent Officer and recent quotes
+	- Talent: scrape job listings for data science, animation, and HR tech roles
+6. **Group 1 research log:** As each task completes, the Research Feed shows cards such as “News Radar • Variety” with bullet takeaways (e.g., “Netflix investing in hybrid creative hubs across EMEA”). The status banner echoes the latest progress line.
+7. **Group 2 analysis:** Once the bundle is ready, section prompts assemble the plan:
+	- *Overview* references Netflix’s dual flywheel (content + personalization).
+	- *Industry* highlights streaming saturation, ad-tier expansion, and AI dubbing.
+	- *SWOT* cites strengths (distribution scale), weaknesses (talent churn in animation), opportunities (EMEA production incentives), threats (content cost inflation).
+	- *30-60-90* recommends discovery with CHRO/Studio Ops, pilot workforce insights in EMEA, then expand to global content ops.
+8. **Review:** Account Plan tab now lists each section with a “Regenerate” chip. Suppose the user wants more AI emphasis in Opportunities—they click Regenerate, type “Highlight how AI-native workforce planning helps accelerate dubbing/localization,” and submit.
+9. **Selective update:** The Opportunities section dims, shows “Refreshing…”, and reappears with updated copy referencing Netflix’s localization roadmap and AI-driven vendor selection.
+10. **Export:** User clicks Download PDF. The server streams a branded PDF containing all Netflix sections, complete with version number and sources list.
+
+Following this flow ensures every reader can map README concepts (agents, prompts, routes) to a tangible use case.
+
+---
+
 ## Backend Architecture
 
 ### Flask Entrypoint (`app.py`)
@@ -144,6 +176,13 @@ Each tool returns normalized dicts so `group1_research` can aggregate them into 
 - Clarification prompt is intentionally adaptive: it keeps the tone warm, infers context, and stops once the scope is complete.
 - Workplan prompt outputs Markdown phases with Inputs/Actions/Outputs, always ending with a confirmation question.
 - Section prompts each highlight different research angles (financials, leadership, SWOT, etc.) while referencing the shared bundle.
+
+### LangChain Integration Details
+- `llm/client.py` instantiates either `langchain_openai.ChatOpenAI` or `langchain_google_genai.ChatGoogleGenerativeAI` depending on `LLM_PROVIDER`. This gives us consistent `.invoke()` semantics and native support for temperature, JSON response hints, and token usage logging.
+- Messages passed to LangChain are built from `SystemMessage`, `HumanMessage`, and `AIMessage` objects (see `chat()`), meaning context windows automatically preserve role metadata and we avoid manual prompt concatenation.
+- When `response_format="json"`, the OpenAI path uses LangChain’s `response_format={"type": "json_object"}` hook, while the Gemini path sets `response_mime_type="application/json"`. LangChain handles the underlying API differences.
+- The DummyLLM still returns an `AIMessage` so downstream code never needs `if provider == ...` branches. Every agent/hook can treat responses as LangChain-native messages.
+- Although research adapters are custom, nothing prevents adding LangChain tools or agents later; the abstraction is already centralized in `LLMClient`.
 
 ---
 
@@ -286,3 +325,42 @@ Setting `LLM_PROVIDER=dummy` (or leaving API keys unset) activates the `DummyLLM
 - **Session reset:** Delete `.flask_session` cookie or restart Flask to clear in-memory `SESSION_STORE`.
 
 ---
+
+## Engineering Notes & Rationale (Straight from the Codebase)
+
+This section documents the “why” behind key implementation decisions, referencing the exact modules that enforce them.
+
+### Memory & Session Handling
+- `SessionState` (in `core/models.py`) intentionally stores *every* intermediate artifact—`search_tasks`, `research_bundle`, `account_plan`, and `plan_version`. This allows `/api/report` and `/api/regenerate-section` to be stateless HTTP calls that simply look up the current session.
+- `SESSION_STORE` inside `app.py` is an in-memory dict because we needed ultra-fast iteration while building the orchestration. The state machine mutates the same object reference, so there is no serialization overhead between stages. Persistence can be swapped in later without touching the agent logic.
+
+### Progress Logging
+- `core/progress.log_progress()` writes human-readable strings into the session. The frontend (`static/app.js`) consumes these via `handleProgressPayload` to update the status banner. This avoids inventing a bespoke progress schema—plain strings were enough and reduced coupling.
+
+### Research Execution Order
+- `agents/group1_research.py` executes channels sequentially on purpose. Many news/finance APIs throttle aggressively, and single-threaded execution keeps us under rate limits without extra tooling. When a task finishes it pushes a dict into `session_state.research_activity`, which the Research Feed renders verbatim.
+- Mandatory channels (web, news, finance, leadership, talent, competitors, wiki) are defined as a fallback even if the search router produces nothing. This “belt-and-suspenders” approach ensures SWOT/opportunity prompts never receive an empty bundle.
+
+### Analysis & Regeneration
+- `agents/group2_analysis.py` loops over `PlanSection` enums and invokes the same `SECTION_PROMPTS` dictionary. Using enums keeps filenames, prompts, and UI sections in sync; you can add a new enum value and the UI will render it automatically.
+- Selective updates (`agents/selective_update.py`) call `regenerate_section()` which reuses the exact same prompt path as the original write. We store `plan.version` in `core/models.AccountPlan` and bump it on every regen so `appendMessage` can tell the user “Updated section (version X).”
+
+### Audio Pathway Specifics
+- `static/app.js`’s `startRecording()` checks `MediaRecorder.isTypeSupported` before choosing `audio/webm;codecs=opus`. If unsupported, it lets the browser fall back to `audio/webm`. On stop, the code builds a Blob with `mediaRecorder.mimeType` so the server knows how to treat the bytes.
+- `llm/client.py` defines `INLINE_AUDIO_LIMIT_BYTES = 18 * 1024 * 1024`. Anything larger is written to a `NamedTemporaryFile`, uploaded with `client.files.upload`, then cleaned up in a `finally` block. This is directly inspired by Google’s Files API guidance and prevents multi-MB inline payloads from blowing up the request body.
+
+### Frontend-State Synchronization
+- `setSectionLoading()` in `static/app.js` adds a `.regenerating` class to the targeted section, which the CSS overlay (`.plan-section.regenerating .plan-section__body::after`) uses to display “Refreshing…”. This visual cue was chosen instead of global spinners so the user knows *which* section is being rewritten.
+- Tabs and overlays are pure CSS toggles: `setActiveTab` switches `.active` classes and `setOverlayVisible` blurs the chat area when the backend is analyzing. No front-end state library is needed because the server already sends `stage` and `has_account_plan` on every response.
+
+### PDF Fallback Strategy
+- `pdf/generator.py` attempts `pdfkit.from_string` first because wkhtmltopdf renders gradients and CSS shadows pixel-perfect. When wkhtmltopdf isn’t installed or fails, the `except` branch calls WeasyPrint (`HTML(string=html).write_pdf()`). This dual approach was added after early testers lacked the binary but still required exports.
+
+### Prompt Hygiene
+- `llm/prompts.py` centralizes every system prompt under module-level constants. This makes it trivial to diff prompt changes and prevents “hidden” prompt tweaks from living inside agents. The clarification prompt was rewritten specifically to avoid the rigid, repetitive tone we observed in early testing.
+
+### UI Micro-interactions
+- The mic button toggles `aria-pressed` (see `setMicState`) so screen readers announce when recording is active. We opted for a red gradient class instead of injecting SVG replacements to keep DOM churn minimal.
+- Research cards are created via `buildResearchActivityCard`, which inspects `item.channel` and emits contextual badges. This is why the `search_router` returns a `channel` field even though the backend could have inferred it—keeping it explicit simplified the rendering logic.
+
+These notes capture the pragmatic decisions encoded in the repository—no marketing gloss, just the reasons the engineers chose specific patterns.
