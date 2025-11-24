@@ -39,17 +39,18 @@ def _handle_confirming_stage(session: SessionState, llm: LLMClient, user_message
         return reply
 
     session.stage = ConversationStage.RESEARCHING
-    log_progress(session, "🧭 Translating the workplan into research runs…")
+    log_progress(session, "Translating the workplan into research runs…")
     session.search_tasks = search_planner.build_search_tasks(llm, session)
     if not session.search_tasks:
-        log_progress(session, "⚙️ Using default research sweep.")
+        log_progress(session, "Using default research sweep.")
     group1_research.run_group1_research(llm, session, session.search_tasks)
 
     session.stage = ConversationStage.ANALYZING
-    log_progress(session, "🧠 Handing insights to strategy agents…")
+    log_progress(session, "Handing insights to strategy agents…")
     group2_analysis.run_group2_analysis(llm, session)
 
     return (
+        "Great—head to the Research Feed tab to watch the agents work. "
         "I've completed the research and created your account plan. "
         "Review it in the Account Plan tab and tell me if you'd like to refine any section."
     )

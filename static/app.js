@@ -20,6 +20,12 @@ const statusBannerText = document.getElementById("status-banner-text");
 const agentConsole = document.getElementById("agent-console");
 const agentConsoleList = document.getElementById("agent-console-list");
 const workspaceShell = document.querySelector(".workspace");
+const micButton = document.getElementById("mic-button");
+const regenModal = document.getElementById("regen-modal");
+const regenBackdrop = document.getElementById("regen-modal-backdrop");
+const regenForm = document.getElementById("regen-form");
+const regenTextarea = document.getElementById("regen-instruction");
+const regenCancelButton = document.getElementById("regen-cancel");
 
 let firstMessageSent = false;
 let currentStage = "planning";
@@ -28,8 +34,13 @@ let activeTab = "chat";
 let tabLock = false;
 let latestResearchActivity = [];
 let latestProgressLog = [];
-
-const CONSOLE_ACTIVE_STAGES = new Set(["researching", "analyzing", "reviewing", "editing", "done"]);
+let pendingRegenerationSection = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let activeAudioStream = null;
+const SUPPORTED_AUDIO_MIME = "audio/webm;codecs=opus";
+const FALLBACK_AUDIO_MIME = "audio/webm";
 
 const STRATEGY_AGENT_BLUEPRINTS = [
     { key: "overview", label: "Overview Architect", match: "building overview", detail: "Framing the executive recap" },
@@ -43,6 +54,16 @@ const STRATEGY_AGENT_BLUEPRINTS = [
     { key: "strategy", label: "GTM Designer", match: "designing strategy", detail: "Shaping GTM motions" },
     { key: "plan_30_60_90", label: "30-60-90 Builder", match: "framing 30-60-90", detail: "Sequencing early moves" },
 ];
+
+const getRecorderOptions = () => {
+    if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== "function") {
+        return null;
+    }
+    if (MediaRecorder.isTypeSupported(SUPPORTED_AUDIO_MIME)) {
+        return { mimeType: SUPPORTED_AUDIO_MIME };
+    }
+    return null;
+};
 
 const renderMarkdown = (text = "") => {
     if (window.marked) {
@@ -120,6 +141,51 @@ const appendMessage = (role, content) => {
     chatWindow.scrollTop = chatWindow.scrollHeight;
 };
 
+const appendAudioMessage = (role, label, transcript = "") => {
+    const wrapper = document.createElement("div");
+    wrapper.className = `chat-message ${role}`;
+    const strong = document.createElement("strong");
+    strong.textContent = role === "user" ? "You:" : "Assistant:";
+    const bubble = document.createElement("p");
+    bubble.classList.add("chat-message__audio");
+
+    const icon = document.createElement("span");
+    icon.className = "chat-message__audio-icon";
+    icon.textContent = "🎙️";
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = label;
+
+    bubble.appendChild(icon);
+    bubble.appendChild(labelSpan);
+
+    if (transcript) {
+        const transcriptSpan = document.createElement("span");
+        transcriptSpan.className = "chat-message__audio-transcript";
+        transcriptSpan.textContent = `– ${transcript}`;
+        bubble.appendChild(transcriptSpan);
+    }
+
+    wrapper.appendChild(strong);
+    wrapper.appendChild(bubble);
+    chatWindow.appendChild(wrapper);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    return wrapper;
+};
+
+const updateAudioTranscript = (messageEl, transcript) => {
+    if (!messageEl) return;
+    const bubble = messageEl.querySelector(".chat-message__audio");
+    if (!bubble) return;
+    let transcriptSpan = bubble.querySelector(".chat-message__audio-transcript");
+    if (!transcriptSpan) {
+        transcriptSpan = document.createElement("span");
+        transcriptSpan.className = "chat-message__audio-transcript";
+        bubble.appendChild(transcriptSpan);
+    }
+    transcriptSpan.textContent = `– ${transcript}`;
+};
+
 const renderProgress = (target, items) => {
     if (!target) return;
     target.innerHTML = "";
@@ -141,6 +207,92 @@ const createBadge = (label, variant = "") => {
     return badge;
 };
 
+const findRunningResearchEvent = (activity = []) =>
+    [...activity].reverse().find((event) => normalizeStatus(event.status) === "running");
+
+const buildResearchActivityCard = (event) => {
+    const card = document.createElement("li");
+    card.className = "activity-card";
+
+    const header = document.createElement("div");
+    header.className = "activity-card__header";
+    const agentLabel = document.createElement("div");
+    agentLabel.className = "activity-card__agent";
+    agentLabel.textContent = event.agent || "Agent";
+    const status = document.createElement("span");
+    const statusValue = (event.status || "running").toLowerCase();
+    status.className = `activity-card__status badge badge--status-${statusValue}`;
+    status.textContent = statusValue.toUpperCase();
+    header.appendChild(agentLabel);
+    header.appendChild(status);
+
+    const metaRow = document.createElement("div");
+    metaRow.className = "activity-card__meta";
+    if (event.source) {
+        metaRow.appendChild(createBadge(event.source));
+    }
+    if (event.channel) {
+        metaRow.appendChild(createBadge(event.channel, "channel"));
+    }
+    if (event.goal) {
+        const goal = document.createElement("span");
+        goal.className = "activity-card__goal";
+        goal.textContent = event.goal;
+        metaRow.appendChild(goal);
+    }
+
+    const queryBlock = document.createElement("div");
+    queryBlock.className = "activity-card__query-block";
+    const queryLabel = document.createElement("span");
+    queryLabel.className = "activity-card__query-label";
+    queryLabel.textContent = "Query";
+    const queryText = document.createElement("p");
+    queryText.className = "activity-card__query";
+    queryText.textContent = event.query || "Working on next query…";
+    queryBlock.appendChild(queryLabel);
+    queryBlock.appendChild(queryText);
+
+    const resultsList = document.createElement("ul");
+    resultsList.className = "activity-card__results";
+    if (event.results && event.results.length) {
+        event.results.slice(0, 3).forEach((item) => {
+            const li = document.createElement("li");
+            const title = item.title || "Result";
+            const snippet = item.snippet || "";
+            if (item.url) {
+                const link = document.createElement("a");
+                link.href = item.url;
+                link.target = "_blank";
+                link.rel = "noopener";
+                link.textContent = title;
+                li.appendChild(link);
+            } else {
+                const strong = document.createElement("strong");
+                strong.textContent = title;
+                li.appendChild(strong);
+            }
+            if (snippet) {
+                const span = document.createElement("span");
+                span.textContent = ` – ${snippet}`;
+                li.appendChild(span);
+            }
+            resultsList.appendChild(li);
+        });
+    } else {
+        const li = document.createElement("li");
+        li.textContent = "Collecting insights…";
+        resultsList.appendChild(li);
+    }
+
+    card.appendChild(header);
+    if (metaRow.childElementCount) {
+        card.appendChild(metaRow);
+    }
+    card.appendChild(queryBlock);
+    card.appendChild(resultsList);
+    return card;
+};
+
 const renderResearchActivity = (activity = []) => {
     if (!researchActivityList) return;
     if (!activity.length) {
@@ -151,172 +303,177 @@ const renderResearchActivity = (activity = []) => {
 
     const fragment = document.createDocumentFragment();
     activity.slice(-18).forEach((event) => {
-        const card = document.createElement("li");
-        card.className = "activity-card";
-
-        const header = document.createElement("div");
-        header.className = "activity-card__header";
-        const agentLabel = document.createElement("div");
-        agentLabel.className = "activity-card__agent";
-        agentLabel.textContent = event.agent || "Agent";
-        const status = document.createElement("span");
-        const statusValue = (event.status || "running").toLowerCase();
-        status.className = `activity-card__status badge badge--status-${statusValue}`;
-        status.textContent = statusValue.toUpperCase();
-        header.appendChild(agentLabel);
-        header.appendChild(status);
-
-        const metaRow = document.createElement("div");
-        metaRow.className = "activity-card__meta";
-        if (event.source) {
-            metaRow.appendChild(createBadge(event.source));
-        }
-        if (event.channel) {
-            metaRow.appendChild(createBadge(event.channel, "channel"));
-        }
-        if (event.goal) {
-            const goal = document.createElement("span");
-            goal.className = "activity-card__goal";
-            goal.textContent = event.goal;
-            metaRow.appendChild(goal);
-        }
-
-        const queryBlock = document.createElement("div");
-        queryBlock.className = "activity-card__query-block";
-        const queryLabel = document.createElement("span");
-        queryLabel.className = "activity-card__query-label";
-        queryLabel.textContent = "Query";
-        const queryText = document.createElement("p");
-        queryText.className = "activity-card__query";
-        queryText.textContent = event.query || "Working on next query…";
-        queryBlock.appendChild(queryLabel);
-        queryBlock.appendChild(queryText);
-
-        const resultsList = document.createElement("ul");
-        resultsList.className = "activity-card__results";
-        if (event.results && event.results.length) {
-            event.results.slice(0, 3).forEach((item) => {
-                const li = document.createElement("li");
-                const title = item.title || "Result";
-                const snippet = item.snippet || "";
-                if (item.url) {
-                    const link = document.createElement("a");
-                    link.href = item.url;
-                    link.target = "_blank";
-                    link.rel = "noopener";
-                    link.textContent = title;
-                    li.appendChild(link);
-                } else {
-                    const strong = document.createElement("strong");
-                    strong.textContent = title;
-                    li.appendChild(strong);
-                }
-                if (snippet) {
-                    const span = document.createElement("span");
-                    span.textContent = ` – ${snippet}`;
-                    li.appendChild(span);
-                }
-                resultsList.appendChild(li);
-            });
-        } else {
-            const li = document.createElement("li");
-            li.textContent = "Collecting insights…";
-            resultsList.appendChild(li);
-        }
-
-        card.appendChild(header);
-        if (metaRow.childElementCount) {
-            card.appendChild(metaRow);
-        }
-        card.appendChild(queryBlock);
-        card.appendChild(resultsList);
-        fragment.appendChild(card);
+        fragment.appendChild(buildResearchActivityCard(event));
     });
 
     researchActivityList.innerHTML = "";
     researchActivityList.appendChild(fragment);
 };
 
+const setMicState = (recording) => {
+    if (!micButton) return;
+    micButton.classList.toggle("recording", Boolean(recording));
+    const label = recording ? "Stop recording" : "Use microphone";
+    micButton.title = label;
+    micButton.setAttribute("aria-label", label);
+    micButton.setAttribute("aria-pressed", recording ? "true" : "false");
+};
+
+const cleanupAudioStream = () => {
+    if (activeAudioStream) {
+        activeAudioStream.getTracks().forEach((track) => track.stop());
+        activeAudioStream = null;
+    }
+};
+
+const startRecording = async () => {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+        appendMessage("assistant", "Voice notes are not supported in this browser.");
+        return;
+    }
+    try {
+        activeAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+        const recorderOptions = getRecorderOptions();
+        mediaRecorder = recorderOptions ? new MediaRecorder(activeAudioStream, recorderOptions) : new MediaRecorder(activeAudioStream);
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data?.size) {
+                audioChunks.push(event.data);
+            }
+        };
+        mediaRecorder.onstop = () => {
+            cleanupAudioStream();
+            const blob = new Blob(audioChunks, { type: mediaRecorder?.mimeType || FALLBACK_AUDIO_MIME });
+            if (blob.size > 0) {
+                sendAudioMessage(blob);
+            }
+            audioChunks = [];
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        setMicState(true);
+    } catch (error) {
+        console.error(error);
+        appendMessage("assistant", "Microphone permission is required to send voice notes.");
+        cleanupAudioStream();
+        isRecording = false;
+        setMicState(false);
+    }
+};
+
+const stopRecording = () => {
+    if (!isRecording) return;
+    isRecording = false;
+    setMicState(false);
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+    }
+};
+
+const sendAudioMessage = (audioBlob) => {
+    if (!audioBlob || !audioBlob.size) {
+        appendMessage("assistant", "Didn't catch that audio. Please try again.");
+        return;
+    }
+    const placeholder = appendAudioMessage("user", "Voice note (transcribing…)");
+    const formData = new FormData();
+    const mimeType = audioBlob.type || FALLBACK_AUDIO_MIME;
+    formData.append("audio", audioBlob, `voice-note.${mimeType.split("/").pop() || "webm"}`);
+    formData.append("mime_type", mimeType);
+
+    fetch("/api/chat-audio", {
+        method: "POST",
+        body: formData,
+    })
+        .then((res) => {
+            if (!res.ok) {
+                return res.json().then((data) => Promise.reject(data.error || "Unable to process audio."));
+            }
+            return res.json();
+        })
+        .then((data) => {
+            if (data.transcript) {
+                updateAudioTranscript(placeholder, data.transcript);
+            } else {
+                updateAudioTranscript(placeholder, "Voice note sent");
+            }
+            if (data.reply) {
+                appendMessage("assistant", data.reply);
+            }
+            handleProgressPayload(data.progress_log || []);
+            if (data.research_activity) {
+                latestResearchActivity = data.research_activity;
+                renderResearchActivity(latestResearchActivity);
+                renderAgentConsole();
+            }
+            const nextStage = data.stage || currentStage;
+            updateStageUI(nextStage, data.has_account_plan || hasPlan);
+            if (data.has_account_plan) {
+                fetchPlan();
+            }
+        })
+        .catch((err) => {
+            console.error(err);
+            updateAudioTranscript(placeholder, "Audio failed. Try again.");
+            appendMessage("assistant", err.toString());
+        });
+};
+
 const renderAgentConsole = () => {
     if (!agentConsole || !agentConsoleList || !workspaceShell) return;
-    const researchEntries = buildResearchAgentEntries();
-    const strategyEntries = buildStrategyAgentEntries();
-    const entries = [...researchEntries, ...strategyEntries];
-    const shouldShow = CONSOLE_ACTIVE_STAGES.has(currentStage) && entries.length > 0;
-
+    const entry = buildCurrentAgentEntry();
+    const shouldShow = Boolean(entry);
     agentConsole.classList.toggle("hidden", !shouldShow);
     workspaceShell.classList.toggle("workspace--solo", !shouldShow);
 
+    agentConsoleList.innerHTML = "";
     if (!shouldShow) {
-        agentConsoleList.innerHTML = "";
         return;
     }
 
-    agentConsoleList.innerHTML = "";
-    entries
-        .sort((a, b) => statusOrder(a.status) - statusOrder(b.status))
-        .forEach((entry) => agentConsoleList.appendChild(buildAgentChip(entry)));
+    agentConsoleList.appendChild(buildAgentChip(entry));
 };
 
-const buildResearchAgentEntries = () => {
-    if (!latestResearchActivity || !latestResearchActivity.length) {
-        return [];
+const buildCurrentAgentEntry = () => {
+    if (currentStage === "researching") {
+        const running = findRunningResearchEvent(latestResearchActivity);
+        if (running) {
+            return {
+                id: running.id,
+                title: running.agent || formatChannelName(running.channel),
+                meta: formatAgentSource(running.source),
+                detail: formatDetail(running.goal || running.query || "Collecting insights"),
+                status: normalizeStatus(running.status),
+            };
+        }
+        return null;
     }
-    const latestByAgent = new Map();
-    latestResearchActivity.forEach((event) => {
-        const key = event.agent || event.channel || event.id;
-        if (!key) return;
-        latestByAgent.set(key, event);
-    });
 
-    const entries = [];
-    latestByAgent.forEach((event, key) => {
-        entries.push({
-            id: key,
-            title: event.agent || formatChannelName(event.channel),
-            meta: formatAgentSource(event.source),
-            detail: formatDetail(event.goal || event.query || `Working ${formatChannelName(event.channel)}`),
-            status: normalizeStatus(event.status),
-            timestamp: event.completed_at || event.started_at || "",
-        });
-    });
-    return entries;
+    if (currentStage === "analyzing") {
+        return buildCurrentStrategyEntry();
+    }
+
+    return null;
 };
 
-const buildStrategyAgentEntries = () => {
-    if (!CONSOLE_ACTIVE_STAGES.has(currentStage) || !latestProgressLog.length) {
-        return [];
+const buildCurrentStrategyEntry = () => {
+    if (!latestProgressLog.length) {
+        return null;
     }
-    const encounteredIndexes = [];
-    const normalizedLog = latestProgressLog.map((line) => line.toLowerCase());
-    STRATEGY_AGENT_BLUEPRINTS.forEach((slot, index) => {
-        if (normalizedLog.some((line) => line.includes(slot.match))) {
-            encounteredIndexes.push(index);
+    const reversedLog = [...latestProgressLog].reverse().map((line) => line.toLowerCase());
+    for (const line of reversedLog) {
+        const slot = STRATEGY_AGENT_BLUEPRINTS.find((blueprint) => line.includes(blueprint.match));
+        if (slot) {
+            return {
+                id: `strategy-${slot.key}`,
+                title: slot.label,
+                meta: "Strategy",
+                detail: formatDetail(slot.detail),
+                status: currentStage === "analyzing" ? "running" : "complete",
+            };
         }
-    });
-    if (!encounteredIndexes.length) {
-        return [];
     }
-
-    const latestIndex = Math.max(...encounteredIndexes);
-    const planComplete = hasPlan && currentStage !== "analyzing";
-
-    return encounteredIndexes.map((index) => {
-        const slot = STRATEGY_AGENT_BLUEPRINTS[index];
-        let status = "running";
-        if (planComplete || index < latestIndex) {
-            status = "complete";
-        } else if (index === latestIndex) {
-            status = currentStage === "analyzing" ? "running" : "complete";
-        }
-        return {
-            id: `strategy-${slot.key}`,
-            title: slot.label,
-            meta: "Strategy",
-            detail: formatDetail(slot.detail),
-            status,
-        };
-    });
+    return null;
 };
 
 const buildAgentChip = ({ title, meta, detail, status }) => {
@@ -386,16 +543,13 @@ const formatDetail = (text = "") => {
     return value;
 };
 
-const formatAgentSource = (text = "") => {
-    return text || "Research";
-};
+const formatAgentSource = (text = "") => text || "Research";
 
-const formatChannelName = (channel = "Agent") => {
-    return channel
+const formatChannelName = (channel = "Agent") =>
+    channel
         .toString()
         .replace(/_/g, " ")
         .replace(/\b\w/g, (char) => char.toUpperCase());
-};
 
 const statusMessages = {
     planning: "Share a company brief to kick things off.",
@@ -453,6 +607,8 @@ const renderPlan = (report) => {
     Object.entries(sections).forEach(([key, value]) => {
         const sectionEl = document.createElement("section");
         sectionEl.className = "plan-section";
+        sectionEl.dataset.planSection = key;
+        sectionEl.dataset.loadingLabel = "Regenerating";
         const heading = key.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
         const header = document.createElement("div");
         header.className = "plan-section__header";
@@ -484,11 +640,9 @@ const renderPlan = (report) => {
     document.querySelectorAll(".regen-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
             const section = btn.dataset.section;
-            const instruction = window.prompt(
-                "Optional additional direction for this section",
-                "Focus more on AI expansion in healthcare"
-            );
-            regenerateSection(section, instruction || "");
+            if (section) {
+                openRegenerationModal(section);
+            }
         });
     });
 };
@@ -521,6 +675,7 @@ const fetchPlan = () => {
 };
 
 const regenerateSection = (section, instruction) => {
+    setSectionLoading(section, true);
     fetch("/api/regenerate-section", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -536,7 +691,39 @@ const regenerateSection = (section, instruction) => {
             appendMessage("assistant", `Updated ${data.section} (version ${data.version}).`);
             fetchPlan();
         })
-        .catch((err) => appendMessage("assistant", err.toString()));
+        .catch((err) => appendMessage("assistant", err.toString()))
+        .finally(() => setSectionLoading(section, false));
+};
+
+const openRegenerationModal = (sectionKey) => {
+    pendingRegenerationSection = sectionKey;
+    if (regenTextarea) {
+        regenTextarea.value = "";
+        setTimeout(() => regenTextarea.focus(), 50);
+    }
+    regenModal?.classList.remove("hidden");
+    regenBackdrop?.classList.remove("hidden");
+};
+
+const closeRegenerationModal = () => {
+    pendingRegenerationSection = null;
+    regenModal?.classList.add("hidden");
+    regenBackdrop?.classList.add("hidden");
+    if (regenTextarea) {
+        regenTextarea.value = "";
+    }
+};
+
+const setSectionLoading = (sectionKey, isLoading) => {
+    const sectionEl = document.querySelector(`[data-plan-section="${sectionKey}"]`);
+    if (!sectionEl) {
+        return;
+    }
+    sectionEl.classList.toggle("regenerating", isLoading);
+    const button = sectionEl.querySelector(".regen-btn");
+    if (button) {
+        button.disabled = isLoading;
+    }
 };
 
 const pollProgress = () => {
@@ -611,6 +798,43 @@ tabButtons.forEach((button) => {
             }
         }
     });
+});
+
+if (micButton) {
+    const micSupported = Boolean(navigator.mediaDevices && window.MediaRecorder);
+    micButton.disabled = !micSupported;
+    micButton.setAttribute("aria-pressed", "false");
+    if (!micSupported) {
+        micButton.title = "Microphone access is not available in this browser.";
+    } else {
+        micButton.addEventListener("click", () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+    }
+}
+
+regenForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!pendingRegenerationSection) {
+        closeRegenerationModal();
+        return;
+    }
+    const instruction = regenTextarea?.value.trim() || "";
+    regenerateSection(pendingRegenerationSection, instruction);
+    closeRegenerationModal();
+});
+
+regenCancelButton?.addEventListener("click", closeRegenerationModal);
+regenBackdrop?.addEventListener("click", closeRegenerationModal);
+
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && regenModal && !regenModal.classList.contains("hidden")) {
+        closeRegenerationModal();
+    }
 });
 
 setInterval(pollProgress, 4000);

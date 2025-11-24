@@ -54,6 +54,50 @@ header h1 {
     gap: 20px;
 }
 
+#mic-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #0ea5e9, #2563eb);
+    box-shadow: 0 6px 14px rgba(37, 99, 235, 0.22);
+    color: #fff;
+    transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#mic-button .mic-icon {
+    width: 20px;
+    height: 20px;
+}
+
+#mic-button .mic-icon path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+#mic-button .mic-icon .mic-body {
+    fill: rgba(255, 255, 255, 0.45);
+}
+
+#mic-button.recording {
+    background: linear-gradient(135deg, #dc2626, #ef4444);
+    box-shadow: 0 6px 18px rgba(220, 38, 38, 0.35);
+}
+
+#mic-button.recording .mic-icon .mic-body {
+    fill: rgba(255, 255, 255, 0.65);
+}
+
+#mic-button.recording .mic-icon path {
+    stroke: #fff5f5;
+}
+
 .agent-console__heading h4 {
     margin: 0;
     font-size: 1rem;
@@ -483,8 +527,16 @@ header h1 {
     padding: 8px 12px;
     border-radius: 8px;
     cursor: pointer;
-    background: #0ea5e9;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
     color: #fff;
+    font-weight: 600;
+    box-shadow: 0 10px 20px rgba(37, 99, 235, 0.25);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.plan-actions button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 26px rgba(37, 99, 235, 0.3);
 }
 
 .plan-section {
@@ -499,18 +551,136 @@ header h1 {
     gap: 12px;
 }
 
-.plan-section__header button {
+.plan-section__header button,
+.regen-btn {
     border: none;
-    padding: 6px 10px;
-    border-radius: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
     cursor: pointer;
-    background: #f97316;
+    background: linear-gradient(135deg, #0ea5e9, #2563eb);
     color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    box-shadow: 0 10px 24px rgba(14, 165, 233, 0.3);
+    transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.plan-section__header button:hover,
+.regen-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px rgba(14, 165, 233, 0.35);
+}
+
+.plan-section.regenerating .plan-section__body {
+    opacity: 0.55;
+    position: relative;
+}
+
+.plan-section.regenerating .plan-section__body::after {
+    content: "Refreshing…";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #1d4ed8;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.8);
 }
 
 .plan-section__body {
     margin-top: 8px;
     white-space: pre-line;
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(6px);
+    z-index: 90;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 100;
+}
+
+.modal.hidden,
+.modal-backdrop.hidden {
+    display: none;
+}
+
+.modal__card {
+    width: min(520px, 100%);
+    background: linear-gradient(135deg, rgba(219, 234, 254, 0.9), rgba(191, 219, 254, 0.95));
+    border-radius: 24px;
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    padding: 28px;
+    box-shadow: 0 35px 80px rgba(15, 23, 42, 0.35);
+}
+
+.modal__card h3 {
+    margin: 0 0 6px;
+    color: #0f172a;
+}
+
+.modal__subtitle {
+    margin: 0 0 16px;
+    color: #1e3a8a;
+}
+
+#regen-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+#regen-instruction {
+    width: 100%;
+    min-height: 140px;
+    border-radius: 18px;
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    padding: 14px 16px;
+    font-size: 1rem;
+    resize: vertical;
+    background: #fff;
+    color: #0f172a;
+}
+
+#regen-instruction:focus {
+    outline: 2px solid #2563eb;
+    border-color: transparent;
+}
+
+.modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.modal__actions button {
+    border: none;
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.modal__actions .ghost {
+    background: rgba(15, 23, 42, 0.08);
+    color: #0f172a;
+}
+
+.modal__actions .primary {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #fff;
+    box-shadow: 0 12px 24px rgba(37, 99, 235, 0.3);
 }
 
 .sources h4 {
@@ -596,4 +766,3 @@ header h1 {
         min-height: auto;
     }
 }
-

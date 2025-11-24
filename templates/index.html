@@ -28,13 +28,21 @@
       <div class="chat-window" id="chat-window">
         <div class="chat-message assistant">
           <strong>Assistant:</strong>
-          <p>Hi! Tell me which company you would like me to research and which persona mode you prefer.</p>
+          <p>Hi! Tell me which company you would like me to research.</p>
         </div>
       </div>
         <form id="chat-form">
           <input type="text" id="chat-input" placeholder="Type your message" autocomplete="off" required />
           <button type="submit">Send</button>
-          <button type="button" id="mic-button" title="Voice input coming soon" disabled>🎤</button>
+          <button type="button" id="mic-button" title="Use microphone" aria-label="Use microphone">
+            <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path class="mic-body" d="M12 5.5c1.1 0 2 .9 2 2v5c0 1.1-.9 2-2 2s-2-.9-2-2v-5c0-1.1.9-2 2-2z"></path>
+              <path d="M7.5 12v1c0 2.5 2 4.5 4.5 4.5s4.5-2 4.5-4.5v-1"></path>
+              <path d="M12 17.5v3.5"></path>
+              <path d="M9.5 21h5"></path>
+            </svg>
+            <span class="sr-only">Use microphone</span>
+          </button>
         </form>
       </section>
       <section class="research-panel tab-panel hidden" id="research-panel">
@@ -73,6 +81,21 @@
     <h3 id="progress-overlay-title">Researching…</h3>
     <p class="progress-overlay__subtitle">Sit tight while the research and analysis agents work through the plan.</p>
     <ul id="overlay-progress-list"></ul>
+  </div>
+</div>
+<div class="modal-backdrop hidden" id="regen-modal-backdrop"></div>
+<div class="modal hidden" id="regen-modal" role="dialog" aria-modal="true" aria-labelledby="regen-modal-title">
+  <div class="modal__card">
+    <h3 id="regen-modal-title">Refine this section</h3>
+    <p class="modal__subtitle">How should I improve this part of the account plan? Mention details, emphasis, or tone.</p>
+    <form id="regen-form">
+      <label for="regen-instruction" class="sr-only">Refinement guidance</label>
+      <textarea id="regen-instruction" placeholder="e.g., Focus on EMEA AI deals and reference recent funding" rows="4" required></textarea>
+      <div class="modal__actions">
+        <button type="button" class="ghost" id="regen-cancel">Cancel</button>
+        <button type="submit" class="primary" id="regen-submit">Apply refinement</button>
+      </div>
+    </form>
   </div>
 </div>
 {% endblock %}

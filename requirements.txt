@@ -3,6 +3,7 @@ langchain-core
 langchain-community
 langchain-openai
 langchain-google-genai
+google-genai
 duckduckgo-search
 newspaper3k
 requests

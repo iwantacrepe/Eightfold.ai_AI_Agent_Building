@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import Any
 from uuid import uuid4
 
 from flask import Flask, jsonify, render_template, request, send_file, session as flask_session
@@ -32,6 +33,19 @@ def _get_or_create_session() -> SessionState:
     return SESSION_STORE[session_id]
 
 
+def _build_chat_response(session_state: SessionState, reply: str, extra: dict | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "reply": reply,
+        "stage": session_state.stage.value,
+        "progress_log": get_progress_log(session_state),
+        "has_account_plan": session_state.account_plan is not None,
+        "research_activity": session_state.research_activity,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
 @app.route("/")
 def index() -> str:
     _get_or_create_session()
@@ -47,15 +61,28 @@ def api_chat():
 
     session_state = _get_or_create_session()
     session_state, reply = handle_user_message(session_state, llm_client, message)
-    has_plan = session_state.account_plan is not None
-    response = {
-        "reply": reply,
-        "stage": session_state.stage.value,
-        "progress_log": get_progress_log(session_state),
-        "has_account_plan": has_plan,
-        "research_activity": session_state.research_activity,
-    }
-    return jsonify(response)
+    return jsonify(_build_chat_response(session_state, reply))
+
+
+@app.post("/api/chat-audio")
+def api_chat_audio():
+    audio_file = request.files.get("audio")
+    if not audio_file:
+        return jsonify({"error": "Audio file missing."}), 400
+
+    audio_bytes = audio_file.read()
+    mime_type = request.form.get("mime_type") or audio_file.mimetype or "audio/webm"
+    if not audio_bytes:
+        return jsonify({"error": "Empty audio payload."}), 400
+
+    transcript = llm_client.transcribe_audio(audio_bytes, mime_type)
+    if not transcript:
+        return jsonify({"error": "Unable to transcribe audio."}), 400
+
+    session_state = _get_or_create_session()
+    session_state, reply = handle_user_message(session_state, llm_client, transcript)
+    extra = {"transcript": transcript}
+    return jsonify(_build_chat_response(session_state, reply, extra))
 
 
 @app.get("/api/report")
