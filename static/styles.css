@@ -29,6 +29,10 @@ header h1 {
     align-items: flex-start;
 }
 
+.workspace--solo {
+    grid-template-columns: 1fr;
+}
+
 .main-stack {
     display: flex;
     flex-direction: column;
@@ -48,12 +52,6 @@ header h1 {
     display: flex;
     flex-direction: column;
     gap: 20px;
-}
-
-.agent-console__section {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
 }
 
 .agent-console__heading h4 {

@@ -2,25 +2,12 @@
 {% block content %}
 <div class="shell">
   <div class="workspace">
-    <aside class="agent-console" id="agent-console">
-      <div class="agent-console__section">
-        <div class="agent-console__heading">
-          <h4>Research Agents</h4>
-          <p>Always-on view of each channel.</p>
-        </div>
-        <ul class="agent-console__list" id="agent-console-research">
-          <li class="agent-console__empty">Agents will activate after you approve the workplan.</li>
-        </ul>
+    <aside class="agent-console hidden" id="agent-console">
+      <div class="agent-console__heading">
+        <h4>Agents</h4>
+        <p>Live view of every researcher and strategist.</p>
       </div>
-      <div class="agent-console__section" id="strategy-console">
-        <div class="agent-console__heading">
-          <h4>Strategy Agents</h4>
-          <p>Highlights once Group 2 begins synthesizing.</p>
-        </div>
-        <ul class="agent-console__list" id="agent-console-strategy">
-          <li class="agent-console__empty">Waiting for the research bundle…</li>
-        </ul>
-      </div>
+      <ul class="agent-console__list" id="agent-console-list"></ul>
     </aside>
     <div class="main-stack">
       <div class="tab-controls">

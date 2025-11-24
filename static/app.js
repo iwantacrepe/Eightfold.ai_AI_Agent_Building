@@ -17,9 +17,9 @@ const researchPanel = document.getElementById("research-panel");
 const researchActivityList = document.getElementById("research-activity-list");
 const statusBanner = document.getElementById("status-banner");
 const statusBannerText = document.getElementById("status-banner-text");
-const agentConsoleResearch = document.getElementById("agent-console-research");
-const agentConsoleStrategy = document.getElementById("agent-console-strategy");
-const strategyConsole = document.getElementById("strategy-console");
+const agentConsole = document.getElementById("agent-console");
+const agentConsoleList = document.getElementById("agent-console-list");
+const workspaceShell = document.querySelector(".workspace");
 
 let firstMessageSent = false;
 let currentStage = "planning";
@@ -28,29 +28,20 @@ let activeTab = "chat";
 let tabLock = false;
 let latestResearchActivity = [];
 let latestProgressLog = [];
-let lastKnownStrategyIndex = -1;
 
-const RESEARCH_AGENT_SLOTS = [
-    { channel: "web", label: "Web Scout", description: "Scanning open web", source: "Tavily" },
-    { channel: "news", label: "News Radar", description: "Pulling latest coverage", source: "News wires" },
-    { channel: "finance", label: "Finance Lens", description: "Refreshing financials", source: "Yahoo Finance" },
-    { channel: "leadership", label: "Org Mapper", description: "Tracking exec priorities", source: "Leadership bios" },
-    { channel: "talent", label: "Talent Scout", description: "Watching hiring signals", source: "Hiring trackers" },
-    { channel: "competitors", label: "Battlecard", description: "Benchmarking competitors", source: "Competitive intel" },
-    { channel: "wikipedia", label: "Knowledge Base", description: "Baseline snapshot", source: "Wikipedia" },
-];
+const CONSOLE_ACTIVE_STAGES = new Set(["researching", "analyzing", "reviewing", "editing", "done"]);
 
-const STRATEGY_AGENT_SLOTS = [
-    { key: "overview", label: "Overview Architect", progressMatch: "Building overview" },
-    { key: "industry", label: "Industry Analyst", progressMatch: "Mapping industry" },
-    { key: "financials", label: "Financial Strategist", progressMatch: "Summarizing financials" },
-    { key: "talent", label: "Talent Partner", progressMatch: "Assessing talent" },
-    { key: "leadership", label: "Leadership Briefing", progressMatch: "Profiling leadership" },
-    { key: "news", label: "Trigger Monitor", progressMatch: "Compiling news" },
-    { key: "swot", label: "SWOT Crafter", progressMatch: "Drafting SWOT" },
-    { key: "opportunities", label: "Opportunity Mapper", progressMatch: "Identifying opportunities" },
-    { key: "strategy", label: "GTM Designer", progressMatch: "Designing strategy" },
-    { key: "plan_30_60_90", label: "30-60-90 Builder", progressMatch: "Framing 30-60-90" },
+const STRATEGY_AGENT_BLUEPRINTS = [
+    { key: "overview", label: "Overview Architect", match: "building overview", detail: "Framing the executive recap" },
+    { key: "industry", label: "Industry Analyst", match: "mapping industry", detail: "Scanning macro trends" },
+    { key: "financials", label: "Financial Strategist", match: "summarizing financials", detail: "Highlighting growth signals" },
+    { key: "talent", label: "Talent Partner", match: "assessing talent", detail: "Identifying hiring focus" },
+    { key: "leadership", label: "Leadership Briefing", match: "profiling leadership", detail: "Capturing exec priorities" },
+    { key: "news", label: "Trigger Monitor", match: "compiling news", detail: "Flagging fresh catalysts" },
+    { key: "swot", label: "SWOT Crafter", match: "drafting swot", detail: "Balancing strengths & risks" },
+    { key: "opportunities", label: "Opportunity Mapper", match: "identifying opportunities", detail: "Surfacing best plays" },
+    { key: "strategy", label: "GTM Designer", match: "designing strategy", detail: "Shaping GTM motions" },
+    { key: "plan_30_60_90", label: "30-60-90 Builder", match: "framing 30-60-90", detail: "Sequencing early moves" },
 ];
 
 const renderMarkdown = (text = "") => {
@@ -113,7 +104,7 @@ const updateStageUI = (stage, planReady = hasPlan) => {
     }
 
     updateStatusBanner(currentStage);
-    renderStrategyAgents();
+    renderAgentConsole();
 };
 
 const appendMessage = (role, content) => {
@@ -246,82 +237,86 @@ const renderResearchActivity = (activity = []) => {
     researchActivityList.appendChild(fragment);
 };
 
-const renderResearchAgents = (activity = []) => {
-    if (!agentConsoleResearch) return;
-    const fragment = document.createDocumentFragment();
-    RESEARCH_AGENT_SLOTS.forEach((slot) => {
-        const latestEvent = [...activity].reverse().find((evt) => evt.channel === slot.channel);
-        const status = ((latestEvent && latestEvent.status) || "pending").toLowerCase();
-        const detail = latestEvent?.goal || latestEvent?.query || slot.description;
-        fragment.appendChild(
-            buildAgentChip({
-                title: slot.label,
-                meta: slot.source,
-                detail: formatDetail(detail),
-                status,
-            })
-        );
-    });
-    agentConsoleResearch.innerHTML = "";
-    agentConsoleResearch.appendChild(fragment);
-};
+const renderAgentConsole = () => {
+    if (!agentConsole || !agentConsoleList || !workspaceShell) return;
+    const researchEntries = buildResearchAgentEntries();
+    const strategyEntries = buildStrategyAgentEntries();
+    const entries = [...researchEntries, ...strategyEntries];
+    const shouldShow = CONSOLE_ACTIVE_STAGES.has(currentStage) && entries.length > 0;
 
-const renderStrategyAgents = () => {
-    if (!agentConsoleStrategy || !strategyConsole) return;
-    const visibleStages = ["analyzing", "reviewing", "editing", "done"];
-    const shouldShow = visibleStages.includes(currentStage);
-    strategyConsole.classList.toggle("hidden", !shouldShow);
+    agentConsole.classList.toggle("hidden", !shouldShow);
+    workspaceShell.classList.toggle("workspace--solo", !shouldShow);
+
     if (!shouldShow) {
-        agentConsoleStrategy.innerHTML =
-            '<li class="agent-console__empty">Waiting for the research bundle…</li>';
+        agentConsoleList.innerHTML = "";
         return;
     }
 
-    const fragment = document.createDocumentFragment();
-    const activeIndex = determineStrategyIndex(latestProgressLog);
-    lastKnownStrategyIndex = activeIndex;
-
-    STRATEGY_AGENT_SLOTS.forEach((slot, index) => {
-        let status = "pending";
-        if (hasPlan && currentStage !== "analyzing") {
-            status = "complete";
-        } else if (index < activeIndex) {
-            status = "complete";
-        } else if (index === activeIndex) {
-            status = "running";
-        }
-        fragment.appendChild(
-            buildAgentChip({
-                title: slot.label,
-                meta: "Strategy",
-                detail: formatDetail(slot.progressMatch),
-                status,
-            })
-        );
-    });
-    agentConsoleStrategy.innerHTML = "";
-    agentConsoleStrategy.appendChild(fragment);
+    agentConsoleList.innerHTML = "";
+    entries
+        .sort((a, b) => statusOrder(a.status) - statusOrder(b.status))
+        .forEach((entry) => agentConsoleList.appendChild(buildAgentChip(entry)));
 };
 
-const determineStrategyIndex = (log = []) => {
-    if (!log.length) {
-        return lastKnownStrategyIndex >= 0 ? lastKnownStrategyIndex : (currentStage === "analyzing" ? 0 : -1);
+const buildResearchAgentEntries = () => {
+    if (!latestResearchActivity || !latestResearchActivity.length) {
+        return [];
     }
-    let latestIndex = -1;
-    log.forEach((entry) => {
-        STRATEGY_AGENT_SLOTS.forEach((slot, idx) => {
-            if (entry.includes(slot.progressMatch)) {
-                latestIndex = Math.max(latestIndex, idx);
-            }
+    const latestByAgent = new Map();
+    latestResearchActivity.forEach((event) => {
+        const key = event.agent || event.channel || event.id;
+        if (!key) return;
+        latestByAgent.set(key, event);
+    });
+
+    const entries = [];
+    latestByAgent.forEach((event, key) => {
+        entries.push({
+            id: key,
+            title: event.agent || formatChannelName(event.channel),
+            meta: formatAgentSource(event.source),
+            detail: formatDetail(event.goal || event.query || `Working ${formatChannelName(event.channel)}`),
+            status: normalizeStatus(event.status),
+            timestamp: event.completed_at || event.started_at || "",
         });
     });
-    if (hasPlan && currentStage !== "analyzing") {
-        return STRATEGY_AGENT_SLOTS.length;
+    return entries;
+};
+
+const buildStrategyAgentEntries = () => {
+    if (!CONSOLE_ACTIVE_STAGES.has(currentStage) || !latestProgressLog.length) {
+        return [];
     }
-    if (latestIndex === -1 && currentStage === "analyzing") {
-        return 0;
+    const encounteredIndexes = [];
+    const normalizedLog = latestProgressLog.map((line) => line.toLowerCase());
+    STRATEGY_AGENT_BLUEPRINTS.forEach((slot, index) => {
+        if (normalizedLog.some((line) => line.includes(slot.match))) {
+            encounteredIndexes.push(index);
+        }
+    });
+    if (!encounteredIndexes.length) {
+        return [];
     }
-    return latestIndex;
+
+    const latestIndex = Math.max(...encounteredIndexes);
+    const planComplete = hasPlan && currentStage !== "analyzing";
+
+    return encounteredIndexes.map((index) => {
+        const slot = STRATEGY_AGENT_BLUEPRINTS[index];
+        let status = "running";
+        if (planComplete || index < latestIndex) {
+            status = "complete";
+        } else if (index === latestIndex) {
+            status = currentStage === "analyzing" ? "running" : "complete";
+        }
+        return {
+            id: `strategy-${slot.key}`,
+            title: slot.label,
+            meta: "Strategy",
+            detail: formatDetail(slot.detail),
+            status,
+        };
+    });
 };
 
 const buildAgentChip = ({ title, meta, detail, status }) => {
@@ -369,6 +364,20 @@ const statusLabel = (status) => {
     return "Queued";
 };
 
+const statusOrder = (status) => {
+    const order = { running: 0, pending: 1, complete: 2, error: 3 };
+    return order[status] ?? 2;
+};
+
+const normalizeStatus = (status) => {
+    if (!status) return "pending";
+    const value = String(status).toLowerCase();
+    if (["running", "complete", "error"].includes(value)) {
+        return value;
+    }
+    return "pending";
+};
+
 const formatDetail = (text = "") => {
     const value = text || "Queued for launch";
     if (value.length > 110) {
@@ -377,10 +386,21 @@ const formatDetail = (text = "") => {
     return value;
 };
 
+const formatAgentSource = (text = "") => {
+    return text || "Research";
+};
+
+const formatChannelName = (channel = "Agent") => {
+    return channel
+        .toString()
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 const statusMessages = {
     planning: "Share a company brief to kick things off.",
     confirming_plan: "Waiting for approval to launch the agents.",
-    researching: "Research agents are sweeping the open web and news feeds…",
+    researching: "Agents are sweeping the open web and news feeds…",
     analyzing: "Strategy agents are building the account plan…",
     reviewing: "Account plan ready—open the Account Plan tab to review.",
 };
@@ -406,7 +426,7 @@ const handleProgressPayload = (items = []) => {
     latestProgressLog = items;
     updateProgress(items);
     updateStatusBanner(currentStage);
-    renderStrategyAgents();
+    renderAgentConsole();
 };
 
 const serializeSections = (report) => ({
@@ -527,7 +547,7 @@ const pollProgress = () => {
             if (data.research_activity) {
                 latestResearchActivity = data.research_activity;
                 renderResearchActivity(latestResearchActivity);
-                renderResearchAgents(latestResearchActivity);
+                renderAgentConsole();
             }
             updateStageUI(data.stage, hasPlan);
             if (data.stage === "reviewing") {
@@ -560,7 +580,7 @@ chatForm.addEventListener("submit", (event) => {
             if (data.research_activity) {
                 latestResearchActivity = data.research_activity;
                 renderResearchActivity(latestResearchActivity);
-                renderResearchAgents(latestResearchActivity);
+                renderAgentConsole();
             }
             updateStageUI(data.stage, data.has_account_plan || hasPlan);
             if (data.has_account_plan) {
@@ -595,5 +615,4 @@ tabButtons.forEach((button) => {
 
 setInterval(pollProgress, 4000);
 
-renderResearchAgents();
-renderStrategyAgents();
+renderAgentConsole();
